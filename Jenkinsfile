@@ -67,8 +67,8 @@ pipeline {
                 withSonarQubeEnv('sonarcloud') {
                     sh '''
                         npx sonar-scanner \
-                          -Dsonar.projectKey=xxxxxxx \
-                          -Dsonar.organization=xxxxxxx \
+                          -Dsonar.projectKey=PadmanabhanSaravanan_juiceshop \
+                          -Dsonar.organization=padmanabhansaravanan \
                           -Dsonar.host.url=https://sonarcloud.io \
                           -Dsonar.token=${SONAR_TOKEN}
                     '''
