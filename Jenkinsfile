@@ -35,6 +35,7 @@ pipeline {
         CONTAINER_NAME  = 'juice-shop-dast'
         APP_PORT        = '3000'
         REPORT_DIR      = 'reports'
+        NODE_OPTIONS    = '--max-old-space-size=4096'
     }
 
     options {

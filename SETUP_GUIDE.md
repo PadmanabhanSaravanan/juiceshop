@@ -180,6 +180,7 @@ docker restart jenkins-server              # reboot the container
 - The **Docker socket** mounted into the Jenkins container/agent, with the container running as root (`-u root`, see 4.1) — the pipeline's own `Install Docker CLI` stage installs the `docker` CLI itself if it isn't already present, so you don't need to install it manually.
 - **Node.js 24** available to Jenkins as a configured tool (the Jenkinsfile requests `nodejs 'node24'`).
 - Network access from the agent to `sonarcloud.io`, `snyk.io`, and the Docker registries used by `docker build` / the ZAP image (`ghcr.io/zaproxy/zaproxy:stable`) / the Trivy image (`aquasec/trivy:latest`).
+- **At least 6 GB of memory allocated to Docker** (Docker Desktop: **Settings → Resources → Advanced → Memory**). The `Install dependencies` stage's `postinstall` script runs `ng build --configuration production` (the Angular frontend build), which is memory-intensive — with too little memory, the build hangs for several minutes and can get OOM-killed, taking the whole `jenkins-server` container (and Jenkins itself) down with it. The Jenkinsfile also sets `NODE_OPTIONS=--max-old-space-size=4096` to cap Node's heap so a runaway build fails cleanly instead of exhausting all container memory.
 
 ### 4.3 Install required Jenkins plugins
 
