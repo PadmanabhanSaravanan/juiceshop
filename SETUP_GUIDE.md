@@ -1,12 +1,11 @@
 # SonarQube (SonarCloud) + Snyk + Jenkins Pipeline Setup Guide
 
-The [Jenkinsfile](Jenkinsfile) at the repo root runs the full pipeline end-to-end against the app itself:
+The [Jenkinsfile](Jenkinsfile) at the repo root runs the full security pipeline end-to-end against the app itself:
 
-1. **Checkout** → **Install dependencies** (`npm ci`)
-2. **Unit & API tests** (`npm run test:server`, `npm run test:api`)
-3. **SAST** via **SonarQube/SonarCloud** + **Quality Gate**
-4. **SCA** via **Snyk**
-5. **Build Docker image** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
+1. **Checkout** → **Install dependencies** (`npm install`)
+2. **SAST** via **SonarQube/SonarCloud** + **Quality Gate**
+3. **SCA** via **Snyk**
+4. **Build Docker image** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
 
 You need accounts/tokens for SonarCloud and Snyk before the pipeline can run successfully. Steps below.
 
@@ -112,7 +111,7 @@ The Jenkinsfile's `DAST - OWASP ZAP` stage runs the official `ghcr.io/zaproxy/za
 
 ## 4. Set up Jenkins
 
-The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local pipeline: install → test → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
+The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local security pipeline: install → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
 
 ### 4.1 Install Jenkins via Docker
 
@@ -174,7 +173,6 @@ Go to **Manage Jenkins → Plugins → Available plugins** and install:
 - **NodeJS** — provides the `tools { nodejs 'node24' }` step.
 - **SonarQube Scanner** — provides `withSonarQubeEnv` and the Quality Gate webhook support.
 - **Pipeline Stage View** (usually pre-installed) — for the `pipeline { ... }` syntax used by the Jenkinsfile.
-- **JUnit Plugin** — provides the `junit` step used in the post-build block to publish test results. Usually already present as a transitive dependency of other plugins (e.g. Pipeline: Stage View) — check **Manage Jenkins → Plugins → Installed plugins** and search "JUnit" before installing; only install it explicitly from **Available plugins** if it's missing there. Don't confuse it with add-ons like "JUnit Attachments" or "JUnit Realtime Test Reporter", which are unrelated extras not required by this Jenkinsfile.
 - **HTML Publisher** — provides `publishHTML`, used to publish the ZAP DAST report.
 - **Docker Pipeline** — if you want to reference Docker via pipeline steps rather than raw `sh 'docker ...'` calls (optional, since the Jenkinsfile shells out to `docker` directly, but useful for credentials/registry integration).
 - **Credentials Binding** (usually pre-installed) — required for the `credentials('sonar-token')` / `credentials('snyk-token')` bindings.

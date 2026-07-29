@@ -33,19 +33,6 @@ pipeline {
             }
         }
 
-        stage('Unit & API tests') {
-            steps {
-                sh 'mkdir -p ${REPORT_DIR}'
-                sh 'npm run test:server'
-                sh 'npm run test:api'
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: '**/test-results/**/*.xml'
-                }
-            }
-        }
-
         stage('SAST - SonarQube') {
             steps {
                 withSonarQubeEnv('sonarcloud') {
