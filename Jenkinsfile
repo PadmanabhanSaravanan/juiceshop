@@ -97,6 +97,26 @@ pipeline {
             }
         }
 
+        stage('Container Scan - Trivy') {
+            steps {
+                sh 'mkdir -p ${REPORT_DIR}'
+                sh '''
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v ${WORKSPACE}/${REPORT_DIR}:/reports \
+                      aquasec/trivy:latest image \
+                      --format json \
+                      --output /reports/trivy-report.json \
+                      ${IMAGE_NAME}:${BUILD_NUMBER} || true
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: "${REPORT_DIR}/trivy-report.json", allowEmptyArchive: true
+                }
+            }
+        }
+
         stage('Run app for DAST') {
             steps {
                 sh '''

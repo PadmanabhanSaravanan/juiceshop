@@ -5,7 +5,7 @@ The [Jenkinsfile](Jenkinsfile) at the repo root runs the full security pipeline 
 1. **Checkout** → **Install Docker CLI** (if missing) → **Install dependencies** (`npm install`)
 2. **SAST** via **SonarQube/SonarCloud** + **Quality Gate**
 3. **SCA** via **Snyk**
-4. **Build Docker image** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
+4. **Build Docker image** → **Container Scan** via **Trivy** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
 
 You need accounts/tokens for SonarCloud and Snyk before the pipeline can run successfully. Steps below.
 
@@ -111,7 +111,7 @@ The Jenkinsfile's `DAST - OWASP ZAP` stage runs the official `ghcr.io/zaproxy/za
 
 ## 4. Set up Jenkins
 
-The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local security pipeline: install Docker CLI (if missing) → install deps → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
+The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local security pipeline: install Docker CLI (if missing) → install deps → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → container scan (Trivy) → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
 
 ### 4.1 Install Jenkins via Docker
 
@@ -168,7 +168,7 @@ docker restart jenkins-server              # reboot the container
 - **Jenkins** (controller + at least one agent) installed and reachable — see 4.1 for the Docker-based install.
 - The **Docker socket** mounted into the Jenkins container/agent, with the container running as root (`-u root`, see 4.1) — the pipeline's own `Install Docker CLI` stage installs the `docker` CLI itself if it isn't already present, so you don't need to install it manually.
 - **Node.js 24** available to Jenkins as a configured tool (the Jenkinsfile requests `nodejs 'node24'`).
-- Network access from the agent to `sonarcloud.io`, `snyk.io`, and the Docker registries used by `docker build` / the ZAP image (`ghcr.io/zaproxy/zaproxy:stable`).
+- Network access from the agent to `sonarcloud.io`, `snyk.io`, and the Docker registries used by `docker build` / the ZAP image (`ghcr.io/zaproxy/zaproxy:stable`) / the Trivy image (`aquasec/trivy:latest`).
 
 ### 4.3 Install required Jenkins plugins
 
@@ -239,6 +239,6 @@ Click **Create** after each one. These map to `SONAR_TOKEN` and `SNYK_TOKEN` res
 - **Manually**: open the job in Jenkins and click **Build Now**.
 - **On every push**: enable your SCM's push-trigger integration (e.g. a repository webhook pointing at `<your-jenkins-url>/github-webhook/` for GitHub, or the equivalent for GitLab/Bitbucket), or configure **Poll SCM** with a schedule.
 
-Watch progress under the job's **Stage View**; reports are available as build **Artifacts** (`reports/snyk-report.json`, `reports/zap-report.*`) and under **ZAP DAST Report** in the job's sidebar once `publishHTML` runs.
+Watch progress under the job's **Stage View**; reports are available as build **Artifacts** (`reports/snyk-report.json`, `reports/trivy-report.json`, `reports/zap-report.*`) and under **ZAP DAST Report** in the job's sidebar once `publishHTML` runs.
 
 ---
