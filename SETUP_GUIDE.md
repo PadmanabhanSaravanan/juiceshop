@@ -2,7 +2,7 @@
 
 The [Jenkinsfile](Jenkinsfile) at the repo root runs the full security pipeline end-to-end against the app itself:
 
-1. **Checkout** → **Install dependencies** (`npm install`)
+1. **Checkout** → **Install Docker CLI** (if missing) → **Install dependencies** (`npm install`)
 2. **SAST** via **SonarQube/SonarCloud** + **Quality Gate**
 3. **SCA** via **Snyk**
 4. **Build Docker image** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
@@ -111,7 +111,7 @@ The Jenkinsfile's `DAST - OWASP ZAP` stage runs the official `ghcr.io/zaproxy/za
 
 ## 4. Set up Jenkins
 
-The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local security pipeline: install → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
+The [Jenkinsfile](Jenkinsfile) at the repo root drives a full local security pipeline: install Docker CLI (if missing) → install deps → SAST (SonarCloud) → Quality Gate → SCA (Snyk) → Docker build → run container → DAST (ZAP) against that container. It expects a Jenkins **agent with Docker available** (Docker-in-Docker or a Docker-capable node), since it builds and runs images directly.
 
 ### 4.1 Install Jenkins via Docker
 
@@ -124,6 +124,7 @@ docker run -d \
   -p 50000:50000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v jenkins_home:/var/jenkins_home \
+  -u root \
   --restart=on-failure \
   jenkins/jenkins:lts
 ```
@@ -136,10 +137,13 @@ Command breakdown:
 - `-p 50000:50000` — maps the inbound agent communication port.
 - `-v /var/run/docker.sock:/var/run/docker.sock` — shares the host's Docker daemon with the container, so pipeline steps like `docker build` / `docker run` (used in the `Build Docker image`, `Run app for DAST`, and `DAST - OWASP ZAP` stages) work from inside Jenkins.
 - `-v jenkins_home:/var/jenkins_home` — creates a named volume so Jenkins config, jobs, and credentials survive container restarts/recreation.
+- `-u root` — runs the container as root, so the pipeline's `Install Docker CLI` stage (see below) can `apt-get install` and so the `jenkins` user has permission to use the mounted Docker socket. Without this, both fail with permission errors.
 - `--restart=on-failure` — restarts the container automatically if it crashes.
 - `jenkins/jenkins:lts` — the official, actively maintained LTS image.
 
-> Note: for the `jenkins` user inside the container to actually run `docker` commands against the mounted socket, it typically needs to either run as root or be added to a group matching the host's `docker` group GID. If pipeline `sh 'docker ...'` steps fail with a permission error, this is the first thing to check.
+The Jenkinsfile's first stage, `Install Docker CLI`, checks whether the `docker` command is already available and, if not, installs the official `docker-ce-cli` package via `apt-get` — this is what actually fixes `docker: not found` errors in the `Build Docker image` / `Run app for DAST` / `DAST - OWASP ZAP` stages. It requires the container to be running as root (see `-u root` above); if it isn't, this stage fails with a permission error.
+
+> Note: running the Jenkins container as root and giving it the host's Docker socket effectively grants it root-equivalent access to the host (a container with socket access can launch privileged containers). This is a common trade-off for local/demo CI setups but is not a hardened production configuration — for production, prefer a dedicated build agent with Docker pre-installed and a non-root user in the `docker` group instead.
 
 Then open http://localhost:8080 and unlock Jenkins:
 
@@ -162,7 +166,7 @@ docker restart jenkins-server              # reboot the container
 ### 4.2 Prerequisites on the Jenkins host/agent
 
 - **Jenkins** (controller + at least one agent) installed and reachable — see 4.1 for the Docker-based install.
-- **Docker** installed on the agent, and the `jenkins` user able to run `docker` commands (add it to the `docker` group, or otherwise grant socket access — see the note in 4.1).
+- The **Docker socket** mounted into the Jenkins container/agent, with the container running as root (`-u root`, see 4.1) — the pipeline's own `Install Docker CLI` stage installs the `docker` CLI itself if it isn't already present, so you don't need to install it manually.
 - **Node.js 24** available to Jenkins as a configured tool (the Jenkinsfile requests `nodejs 'node24'`).
 - Network access from the agent to `sonarcloud.io`, `snyk.io`, and the Docker registries used by `docker build` / the ZAP image (`ghcr.io/zaproxy/zaproxy:stable`).
 
