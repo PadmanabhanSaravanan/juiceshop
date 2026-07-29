@@ -7,6 +7,15 @@ The [Jenkinsfile](Jenkinsfile) at the repo root runs the full security pipeline 
 3. **SCA** via **Snyk**
 4. **Build Docker image** → **Container Scan** via **Trivy** → **Run app for DAST** → **DAST** via **OWASP ZAP** against the running container
 
+Each scan stage acts as a quality gate — a critical/high-severity finding stops the pipeline before later stages run:
+
+| Stage | Gate condition |
+| ----- | --------------- |
+| SAST (SonarQube) | SonarCloud Quality Gate fails → `waitForQualityGate abortPipeline: true` aborts the build. Configure which severities fail the gate in your SonarCloud project's **Quality Gate** settings. |
+| SCA (Snyk) | `snyk test --severity-threshold=critical` exits non-zero (and aborts the stage) if any **critical** vulnerability is found. |
+| Container Scan (Trivy) | `trivy image --exit-code 1 --severity CRITICAL` exits non-zero (and aborts the stage) if any **critical** OS/library vulnerability is found in the built image. |
+| DAST (ZAP) | Controlled by the `ENFORCE_ZAP_GATE` build parameter — see [4.9 Run the pipeline](#49-run-the-pipeline). Off by default, since Juice Shop is intentionally full of High-risk findings (SQLi, XSS) that would otherwise fail every run. |
+
 You need accounts/tokens for SonarCloud and Snyk before the pipeline can run successfully. Steps below.
 
 ---
@@ -231,13 +240,20 @@ Click **Create** after each one. These map to `SONAR_TOKEN` and `SNYK_TOKEN` res
 - Tool name `node24`, SonarQube server name `sonarcloud`, and credential IDs `sonar-token` / `snyk-token` must match the Jenkinsfile **exactly** — these are hardcoded, not parameterized.
 - The agent running the job needs permission to run `docker build`, `docker run`, and `docker rm` without a password prompt.
 - Ports: the pipeline maps container port `3000` to host port `3000` (`APP_PORT`) — make sure that port is free on the agent, or update `APP_PORT` in the Jenkinsfile if it conflicts with another job.
-- `.zap/rules.tsv` must exist at the repo root (it does, by default) — the DAST stage copies it into the report directory before running ZAP.
-- The `Quality Gate` stage will wait up to 5 minutes for SonarCloud's webhook; if no webhook is configured (4.6), configure one or expect this stage to eventually time out (`abortPipeline: false` means it won't fail the build either way).
+- `.zap/rules.tsv` and `.zap/rules-strict.tsv` must exist at the repo root (they do, by default) — the DAST stage copies one of them into the report directory before running ZAP, depending on `ENFORCE_ZAP_GATE` (see 4.9).
+- The `Quality Gate` stage will wait up to 5 minutes for SonarCloud's webhook; if no webhook is configured (4.6), the stage eventually times out and — since `abortPipeline: true` — **fails the build**. Configure the webhook to avoid unnecessary timeouts blocking otherwise-healthy builds.
 
 ### 4.9 Run the pipeline
 
-- **Manually**: open the job in Jenkins and click **Build Now**.
-- **On every push**: enable your SCM's push-trigger integration (e.g. a repository webhook pointing at `<your-jenkins-url>/github-webhook/` for GitHub, or the equivalent for GitLab/Bitbucket), or configure **Poll SCM** with a schedule.
+- **Manually**: open the job in Jenkins and click **Build Now**, or **Build with Parameters** to set `ENFORCE_ZAP_GATE`.
+- **On every push**: enable your SCM's push-trigger integration (e.g. a repository webhook pointing at `<your-jenkins-url>/github-webhook/` for GitHub, or the equivalent for GitLab/Bitbucket), or configure **Poll SCM** with a schedule. Parameterized triggers use each parameter's default value (`ENFORCE_ZAP_GATE` defaults to `false`).
+
+**`ENFORCE_ZAP_GATE` build parameter:** controls whether the DAST stage's High-risk ZAP alerts abort the pipeline.
+
+- `false` (default) — uses `.zap/rules.tsv`, where High-risk rules are left as `WARN`. The stage always completes and the report is published, but never fails the build. Use this to demonstrate the full pipeline end-to-end (Juice Shop is intentionally full of High-risk findings like SQL Injection and XSS, so a strict gate would fail on essentially every run).
+- `true` — uses `.zap/rules-strict.tsv`, where key High-risk rule IDs (SQL Injection, XSS, Command Injection, XXE, CRLF Injection, etc.) are set to `FAIL`. If ZAP finds any of them, `zap-baseline.py` exits with code 2 and the stage — and pipeline — fails. Use this to demonstrate the strict gate behavior.
+
+To run with the strict gate: click **Build with Parameters** on the job, set `ENFORCE_ZAP_GATE` to `true`, then **Build**.
 
 Watch progress under the job's **Stage View**; reports are available as build **Artifacts** (`reports/snyk-report.json`, `reports/trivy-report.json`, `reports/zap-report.*`) and under **ZAP DAST Report** in the job's sidebar once `publishHTML` runs.
 

@@ -5,6 +5,14 @@ pipeline {
         nodejs 'node24'
     }
 
+    parameters {
+        booleanParam(
+            name: 'ENFORCE_ZAP_GATE',
+            defaultValue: false,
+            description: 'If true, High-risk ZAP alerts abort the pipeline. Juice Shop is deliberately full of High-risk findings (SQLi, XSS, etc.), so this is off by default to let the pipeline demonstrate its later stages; turn it on to see the strict gate behavior.'
+        )
+    }
+
     environment {
         SONAR_TOKEN     = credentials('sonar-token')
         SNYK_TOKEN      = credentials('snyk-token')
@@ -71,7 +79,7 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
@@ -81,7 +89,7 @@ pipeline {
                 sh 'mkdir -p ${REPORT_DIR}'
                 sh '''
                     npx snyk auth ${SNYK_TOKEN}
-                    npx snyk test --json-file-output=${REPORT_DIR}/snyk-report.json || true
+                    npx snyk test --json-file-output=${REPORT_DIR}/snyk-report.json --severity-threshold=critical
                 '''
             }
             post {
@@ -107,7 +115,14 @@ pipeline {
                       aquasec/trivy:latest image \
                       --format json \
                       --output /reports/trivy-report.json \
-                      ${IMAGE_NAME}:${BUILD_NUMBER} || true
+                      ${IMAGE_NAME}:${BUILD_NUMBER}
+
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      aquasec/trivy:latest image \
+                      --exit-code 1 \
+                      --severity CRITICAL \
+                      ${IMAGE_NAME}:${BUILD_NUMBER}
                 '''
             }
             post {
@@ -140,9 +155,19 @@ pipeline {
                 // ZAP writes/reads files relative to /zap/wrk, so the whole
                 // report dir (not a subpath) must be the mount target, and
                 // rules.tsv must be copied inside it first.
+                //
+                // ENFORCE_ZAP_GATE=false (default) uses rules.tsv, where High-risk
+                // rules are WARN, so zap-baseline.py never exits 2 (Juice Shop is
+                // deliberately full of High-risk findings). ENFORCE_ZAP_GATE=true
+                // uses rules-strict.tsv, where High-risk rules are FAIL, so the
+                // stage aborts the pipeline on any High-risk alert.
                 sh '''
                     mkdir -p ${WORKSPACE}/${REPORT_DIR}
-                    cp ${WORKSPACE}/.zap/rules.tsv ${WORKSPACE}/${REPORT_DIR}/rules.tsv
+                    if [ "${ENFORCE_ZAP_GATE}" = "true" ]; then
+                        cp ${WORKSPACE}/.zap/rules-strict.tsv ${WORKSPACE}/${REPORT_DIR}/rules.tsv
+                    else
+                        cp ${WORKSPACE}/.zap/rules.tsv ${WORKSPACE}/${REPORT_DIR}/rules.tsv
+                    fi
 
                     docker run --rm \
                       --network host \
@@ -153,7 +178,7 @@ pipeline {
                         -r zap-report.html \
                         -J zap-report.json \
                         -c rules.tsv \
-                        -a || true
+                        -a
                 '''
             }
             post {
