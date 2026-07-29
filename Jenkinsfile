@@ -29,7 +29,7 @@ pipeline {
 
         stage('Install dependencies') {
             steps {
-                sh 'npm ci --include=dev'
+                sh 'npm install --include=dev'
             }
         }
 
@@ -51,7 +51,7 @@ pipeline {
                 withSonarQubeEnv('sonarcloud') {
                     sh '''
                         npx sonar-scanner \
-                          -Dsonar.projectKey=PadmanabhanSaravanan_devsecops_demo \
+                          -Dsonar.projectKey=PadmanabhanSaravanan_juiceshop \
                           -Dsonar.organization=padmanabhansaravanan \
                           -Dsonar.host.url=https://sonarcloud.io \
                           -Dsonar.token=${SONAR_TOKEN}
