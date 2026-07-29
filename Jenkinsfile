@@ -7,6 +7,21 @@ pipeline {
 
     parameters {
         booleanParam(
+            name: 'ENFORCE_SONAR_GATE',
+            defaultValue: false,
+            description: 'If true, a failed SonarCloud Quality Gate aborts the pipeline. Off by default so later stages (SCA, container scan, DAST) can still run and be demonstrated even when the gate fails, e.g. due to missing coverage data.'
+        )
+        booleanParam(
+            name: 'ENFORCE_SNYK_GATE',
+            defaultValue: false,
+            description: 'If true, critical Snyk vulnerabilities abort the pipeline. Off by default so later stages can still run and be demonstrated.'
+        )
+        booleanParam(
+            name: 'ENFORCE_TRIVY_GATE',
+            defaultValue: false,
+            description: 'If true, critical Trivy container vulnerabilities abort the pipeline. Off by default so later stages can still run and be demonstrated.'
+        )
+        booleanParam(
             name: 'ENFORCE_ZAP_GATE',
             defaultValue: false,
             description: 'If true, High-risk ZAP alerts abort the pipeline. Juice Shop is deliberately full of High-risk findings (SQLi, XSS, etc.), so this is off by default to let the pipeline demonstrate its later stages; turn it on to see the strict gate behavior.'
@@ -79,7 +94,13 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                    script {
+                        def qg = waitForQualityGate abortPipeline: false
+                        echo "SonarCloud Quality Gate status: ${qg.status}"
+                        if (qg.status != 'OK' && params.ENFORCE_SONAR_GATE) {
+                            error "Pipeline aborted: SonarCloud Quality Gate status is ${qg.status} and ENFORCE_SONAR_GATE is true."
+                        }
+                    }
                 }
             }
         }
@@ -89,7 +110,15 @@ pipeline {
                 sh 'mkdir -p ${REPORT_DIR}'
                 sh '''
                     npx snyk auth ${SNYK_TOKEN}
+                    set +e
                     npx snyk test --json-file-output=${REPORT_DIR}/snyk-report.json --severity-threshold=critical
+                    SNYK_EXIT_CODE=$?
+                    set -e
+                    echo "Snyk exit code: ${SNYK_EXIT_CODE}"
+                    if [ "${SNYK_EXIT_CODE}" != "0" ] && [ "${ENFORCE_SNYK_GATE}" = "true" ]; then
+                        echo "Pipeline aborted: critical Snyk vulnerabilities found and ENFORCE_SNYK_GATE is true."
+                        exit 1
+                    fi
                 '''
             }
             post {
@@ -117,12 +146,20 @@ pipeline {
                       --output /reports/trivy-report.json \
                       ${IMAGE_NAME}:${BUILD_NUMBER}
 
+                    set +e
                     docker run --rm \
                       -v /var/run/docker.sock:/var/run/docker.sock \
                       aquasec/trivy:latest image \
                       --exit-code 1 \
                       --severity CRITICAL \
                       ${IMAGE_NAME}:${BUILD_NUMBER}
+                    TRIVY_EXIT_CODE=$?
+                    set -e
+                    echo "Trivy exit code: ${TRIVY_EXIT_CODE}"
+                    if [ "${TRIVY_EXIT_CODE}" != "0" ] && [ "${ENFORCE_TRIVY_GATE}" = "true" ]; then
+                        echo "Pipeline aborted: critical Trivy vulnerabilities found and ENFORCE_TRIVY_GATE is true."
+                        exit 1
+                    fi
                 '''
             }
             post {
